@@ -1,5 +1,5 @@
 [package]
-name = "seaweed-k8s-operator"
+name = "seaweedfs-k8s-operator"
 version = "0.1.0"
 edition = "2024"
 

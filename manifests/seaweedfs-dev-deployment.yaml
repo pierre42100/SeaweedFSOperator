@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seaweedfs
+  labels:
+    app: seaweedfs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seaweedfs
+  template:
+    metadata:
+      labels:
+        app: seaweedfs
+    spec:
+      automountServiceAccountToken: false
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: seaweedfs
+      containers:
+        - name: seaweedfs
+          image: chrislusf/seaweedfs
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9333
+              protocol: TCP
+              name: master-ui
+            - containerPort: 9340
+              protocol: TCP
+              name: volume-server
+            - containerPort: 8888
+              protocol: TCP
+              name: filer-ui
+            - containerPort: 8333
+              protocol: TCP
+              name: s3-endpoint
+            - containerPort: 7333
+              protocol: TCP
+              name: webdav
+            - containerPort: 23646
+              protocol: TCP
+              name: admin-ui
+          args:
+            - mini
+            - -dir=/data
+            - -admin.user=user
+            - -admin.password=password
+            - -filer.exposeDirectoryData=false
+            - -filer.ui.deleteDir=false
+            - -webdav=false
+          volumeMounts:
+            - mountPath: "/data"
+              name: data
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: seaweedfs
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 5Gi
+  hostPath:
+    path: /data/seaweedfs/
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seaweedfs
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+  labels:
+    app: seaweedfs
+spec:
+  type: LoadBalancer
+  selector:
+    app: seaweedfs
+  ports:
+    - name: master-ui
+      port: 9333
+      targetPort: master-ui
+    - name: volume-server
+      port: 9340
+      targetPort: volume-server
+    - name: filer-ui
+      port: 8888
+      targetPort: filer-ui
+    - name: s3-endpoint
+      port: 8333
+      targetPort: s3-endpoint
+    - name: webdav
+      port: 7333
+      targetPort: webdav
+    - name: admin-ui
+      port: 23646
+      targetPort: admin-ui
+  externalTrafficPolicy: Local
