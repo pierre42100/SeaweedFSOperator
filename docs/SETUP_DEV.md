@@ -3,6 +3,14 @@
 ## Install Rust
 As this project has been written using Rust, you will need to install it prior working on it. Please follow the official instructions: [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
 
+## Install `protoc`
+Protocol Buffers compiler needs to be installed:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y protobuf-compiler libprotobuf-dev
+```
+
 ## Install Minikube
 You will also need to install Minikube on your computer to have a test K8S environment. In order to do this, please follow the official instructions: [https://minikube.sigs.k8s.io/docs/start](https://minikube.sigs.k8s.io/docs/start)
 
@@ -87,7 +95,7 @@ If `EXTERNAL-IP` is set to `127.0.0.1` then you are ready to go!
 * WebDAV: http://localhost:7333
 * Admin UI: http://localhost:23646
   * Username: `user`
-  * Password: `admin`
+  * Password: `password`
 
 
 ## Deploy CRD
