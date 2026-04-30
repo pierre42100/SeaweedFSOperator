@@ -11,6 +11,12 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y protobuf-compiler libprotobuf-dev
 ```
 
+## Download `weed` and add it to your path
+```bash
+wget https://github.com/seaweedfs/seaweedfs/releases/download/4.22/linux_amd64.tar.gz
+tar -xf linux_amd64.tar.gz
+```
+
 ## Install Minikube
 You will also need to install Minikube on your computer to have a test K8S environment. In order to do this, please follow the official instructions: [https://minikube.sigs.k8s.io/docs/start](https://minikube.sigs.k8s.io/docs/start)
 
