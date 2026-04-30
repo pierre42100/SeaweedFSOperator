@@ -91,6 +91,7 @@ If `EXTERNAL-IP` is set to `127.0.0.1` then you are ready to go!
 * Master UI: http://localhost:9333
 * Volume Server: http://localhost:9340
 * Filer UI: http://localhost:8888
+* Filer GRPC: http://localhost:8889
 * S3 Endpoint: http://localhost:8333
 * WebDAV: http://localhost:7333
 * Admin UI: http://localhost:23646

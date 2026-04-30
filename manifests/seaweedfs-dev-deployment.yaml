@@ -33,6 +33,9 @@ spec:
             - containerPort: 8888
               protocol: TCP
               name: filer-ui
+            - containerPort: 8889
+              protocol: TCP
+              name: filer-grpc
             - containerPort: 8333
               protocol: TCP
               name: s3-endpoint
@@ -49,6 +52,7 @@ spec:
             - -admin.password=password
             - -filer.exposeDirectoryData=false
             - -filer.ui.deleteDir=false
+            - -filer.port.grpc=8889
             - -webdav=false
           volumeMounts:
             - mountPath: "/data"
@@ -100,6 +104,9 @@ spec:
     - name: filer-ui
       port: 8888
       targetPort: filer-ui
+    - name: filer-grpc
+      port: 8889
+      targetPort: filer-grpc
     - name: s3-endpoint
       port: 8333
       targetPort: s3-endpoint
