@@ -1,9 +1,14 @@
 use crate::protos::seaweed_filer_client::SeaweedFilerClient;
 use crate::protos::seaweed_identity_access_management_client::SeaweedIdentityAccessManagementClient;
-use crate::protos::{GetConfigurationRequest, GetFilerConfigurationRequest};
+use crate::protos::{CreateUserRequest, GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity, ListUsersRequest};
 use std::fmt::Display;
 use tonic::codegen::http::uri::InvalidUri;
 use tonic::transport::Channel;
+
+#[derive(Debug)]
+pub struct UserInfo {
+    // TODO
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SeaweedfsClientError {
@@ -13,6 +18,8 @@ pub enum SeaweedfsClientError {
     ConnectError(#[source] tonic::transport::Error),
     #[error("failed to query gRPC endpoint: {0}")]
     CallError(#[from] tonic::Status),
+    #[error("requested user does not exists")]
+    UserDoesNotExist
 }
 
 type Res<E> = Result<E, SeaweedfsClientError>;
@@ -74,17 +81,39 @@ impl SeaweedfsInstance {
         Ok(!filer_res.get_ref().version.is_empty())
     }
 
-    /*/// Get the list of users
-    pub async fn users_list(&self) -> Result<Vec<UserInfo>, SeaweedfsClientError> {
+    /// Get the list of users
+    pub async fn users_list(&self) -> Res<Vec<String>> {
+        let users = self
+            .iam_client()
+            .await?
+            .list_users(tonic::Request::new(ListUsersRequest {}))
+            .await?;
+        Ok(users.into_inner().usernames)
+    }
+
+    /// Get a user information
+    pub async fn user_info(&self) -> Res<Identity> {
+        let res = self
+            .iam_client()
+            .await?
+            .get_user(tonic::Request::new(GetUserRequest {
+                username: self.name.clone(),
+            }))
+            .await?;
+        
+        let Some(identity)=res.into_inner().identity else {
+            return Err(SeaweedfsClientError::UserDoesNotExist);
+        };
+
+        Ok(identity)
+    }
+
+    /// Create or update user information
+    pub async fn users_apply(&self, info: UserInfo) -> Result<(), SeaweedfsClientError> {
         todo!()
     }
 
-    /// Create a new user
-    pub async fn users_create(&self) -> Result<(), SeaweedfsClientError> {
-        todo!()
-    }
-
-    /// Get the list of buckets
+    /*/// Get the list of buckets
     pub async fn buckets_list(&self) -> Result<Vec<BucketEntry>, SeaweedfsClientError> {
         todo!()
     }
@@ -93,4 +122,20 @@ impl SeaweedfsInstance {
     pub async fn bucket_apply(&self, b: &BucketSpecs) -> Result<(), SeaweedfsClientError> {
         todo!()
     }*/
+}
+
+#[cfg(test)]
+mod test {
+    use crate::seaweedfs_test_server::SeaweedfsTestServer;
+
+    const TEST_BUCKET_NAME: &str = "mybucket";
+    const TEST_POLICY_NAME: &str = "mypolicy";
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn list_users_empty_instance() {
+        let srv = SeaweedfsTestServer::start().await.unwrap();
+        let users = srv.as_instance().users_list().await.unwrap();
+        assert!(users.is_empty());
+    }
 }
