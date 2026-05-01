@@ -1,11 +1,9 @@
 use crate::protos::seaweed_filer_client::SeaweedFilerClient;
 use crate::protos::seaweed_identity_access_management_client::SeaweedIdentityAccessManagementClient;
-use crate::protos::{
-    CreateUserRequest, Credential, GetConfigurationRequest, GetFilerConfigurationRequest,
-    GetUserRequest, Identity, ListUsersRequest, UpdateUserRequest,
-};
+use crate::protos::{CreateUserRequest, Credential, Entry, GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity, ListEntriesRequest, ListUsersRequest, UpdateUserRequest};
 use std::fmt::Display;
 use tonic::codegen::http::uri::InvalidUri;
+use tonic::codegen::tokio_stream::StreamExt;
 use tonic::transport::Channel;
 
 #[derive(Debug, Clone)]
@@ -32,7 +30,6 @@ type Res<E> = Result<E, SeaweedfsClientError>;
 /// Client for Seaweedfs operations
 #[derive(Debug)]
 pub struct SeaweedfsInstance {
-    name: String,
     url: String,
 }
 
@@ -40,7 +37,6 @@ impl SeaweedfsInstance {
     /// Create a new Seaweedfs client instance
     pub fn new<N: Display, U: Display>(name: N, url: U) -> Self {
         Self {
-            name: name.to_string(),
             url: url.to_string(),
         }
     }
@@ -154,12 +150,34 @@ impl SeaweedfsInstance {
         Ok(())
     }
 
-    /*/// Get the list of buckets
-    pub async fn buckets_list(&self) -> Result<Vec<BucketEntry>, SeaweedfsClientError> {
-        todo!()
+    /// Get the list of buckets
+    pub async fn buckets_list(&self) -> Result<Vec<Entry>, SeaweedfsClientError> {
+        let mut filer_client = self.filer_client().await?;
+        let filer_config = filer_client
+            .get_filer_configuration(tonic::Request::new(GetFilerConfigurationRequest {})).await?.into_inner();
+
+        let mut stream = filer_client.list_entries(tonic::Request::new(ListEntriesRequest {
+            directory: filer_config.dir_buckets,
+            prefix: "".to_string(),
+            start_from_file_name: "".to_string(),
+            inclusive_start_from: false,
+            limit: u32::MAX,
+            snapshot_ts_ns: 0,
+        })).await?.into_inner();
+
+
+        let mut list = Vec::new();
+        while let Some(item) = stream.next().await {
+            let item = item?;
+            if let Some(entry)= item.entry && entry.is_directory{
+                list.push(entry);
+            }
+        }
+
+        Ok(list)
     }
 
-    /// Apply bucket desired configuration. If bucket already exists, it is not dropped
+    /*/// Apply bucket desired configuration. If bucket already exists, it is not dropped
     pub async fn bucket_apply(&self, b: &BucketSpecs) -> Result<(), SeaweedfsClientError> {
         todo!()
     }*/
@@ -234,5 +252,13 @@ mod test {
 
         let users = inst.users_list().await.unwrap();
         assert_eq!(users, &[user.to_string(), second_user.username]);
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn list_buckets_empty_instance() {
+        let srv = SeaweedfsTestServer::start().await.unwrap();
+        let buckets = srv.as_instance().buckets_list().await.unwrap();
+        assert!(buckets.is_empty());
     }
 }
