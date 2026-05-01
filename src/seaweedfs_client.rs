@@ -1,7 +1,10 @@
 use crate::protos::seaweed_filer_client::SeaweedFilerClient;
 use crate::protos::seaweed_identity_access_management_client::SeaweedIdentityAccessManagementClient;
-use crate::protos::{CreateUserRequest, Credential, Entry, GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity, ListEntriesRequest, ListUsersRequest, UpdateUserRequest};
+use crate::protos::{CreateEntryRequest, CreateUserRequest, Credential, Entry, FuseAttributes, GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity, ListEntriesRequest, ListUsersRequest, UpdateEntryRequest, UpdateUserRequest};
+use prost::Message;
+use std::collections::HashMap;
 use std::fmt::Display;
+use tonic::Code;
 use tonic::codegen::http::uri::InvalidUri;
 use tonic::codegen::tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -11,6 +14,25 @@ pub struct UserInfo {
     username: String,
     access_key: String,
     secret_key: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BucketSpecs {
+    pub instance: String,
+    pub secret: String,
+    /// The name of the bucket
+    pub name: String,
+    /// Render bucket publicly available
+    #[serde(default)]
+    pub anonymous_read_access: bool,
+    /// Whether versionning should be enabled on bucket
+    #[serde(default)]
+    pub versioning: bool,
+    /// Bucket storage quota
+    pub quota: Option<i64>,
+    /// Bucket lock
+    #[serde(default)]
+    pub lock: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -23,6 +45,8 @@ pub enum SeaweedfsClientError {
     CallError(#[from] tonic::Status),
     #[error("requested user does not exists")]
     UserDoesNotExist,
+    #[error("requested bucket does not exists")]
+    BucketDoesNotExist,
 }
 
 type Res<E> = Result<E, SeaweedfsClientError>;
@@ -35,7 +59,7 @@ pub struct SeaweedfsInstance {
 
 impl SeaweedfsInstance {
     /// Create a new Seaweedfs client instance
-    pub fn new<N: Display, U: Display>(name: N, url: U) -> Self {
+    pub fn new<U: Display>(url: U) -> Self {
         Self {
             url: url.to_string(),
         }
@@ -100,13 +124,21 @@ impl SeaweedfsInstance {
             .get_user(tonic::Request::new(GetUserRequest {
                 username: username.to_string(),
             }))
-            .await?;
+            .await;
 
-        let Some(identity) = res.into_inner().identity else {
-            return Err(SeaweedfsClientError::UserDoesNotExist);
-        };
+        match res {
+            Ok(res) => {
+                let Some(identity) = res.into_inner().identity else {
+                    return Err(SeaweedfsClientError::UserDoesNotExist);
+                };
 
-        Ok(identity)
+                Ok(identity)
+            }
+            Err(e) if e.code() == Code::NotFound => {
+                return Err(SeaweedfsClientError::UserDoesNotExist);
+            }
+            Err(e) => Err(SeaweedfsClientError::CallError(e)),
+        }
     }
 
     /// Create or update user information
@@ -154,22 +186,28 @@ impl SeaweedfsInstance {
     pub async fn buckets_list(&self) -> Result<Vec<Entry>, SeaweedfsClientError> {
         let mut filer_client = self.filer_client().await?;
         let filer_config = filer_client
-            .get_filer_configuration(tonic::Request::new(GetFilerConfigurationRequest {})).await?.into_inner();
+            .get_filer_configuration(tonic::Request::new(GetFilerConfigurationRequest {}))
+            .await?
+            .into_inner();
 
-        let mut stream = filer_client.list_entries(tonic::Request::new(ListEntriesRequest {
-            directory: filer_config.dir_buckets,
-            prefix: "".to_string(),
-            start_from_file_name: "".to_string(),
-            inclusive_start_from: false,
-            limit: u32::MAX,
-            snapshot_ts_ns: 0,
-        })).await?.into_inner();
-
+        let mut stream = filer_client
+            .list_entries(tonic::Request::new(ListEntriesRequest {
+                directory: filer_config.dir_buckets,
+                prefix: "".to_string(),
+                start_from_file_name: "".to_string(),
+                inclusive_start_from: false,
+                limit: u32::MAX,
+                snapshot_ts_ns: 0,
+            }))
+            .await?
+            .into_inner();
 
         let mut list = Vec::new();
         while let Some(item) = stream.next().await {
             let item = item?;
-            if let Some(entry)= item.entry && entry.is_directory{
+            if let Some(entry) = item.entry
+                && entry.is_directory
+            {
                 list.push(entry);
             }
         }
@@ -177,17 +215,170 @@ impl SeaweedfsInstance {
         Ok(list)
     }
 
-    /*/// Apply bucket desired configuration. If bucket already exists, it is not dropped
-    pub async fn bucket_apply(&self, b: &BucketSpecs) -> Result<(), SeaweedfsClientError> {
+    /// Get a single bucket information
+    pub async fn bucket_get_single(&self, name: &str) -> Res<Entry> {
         todo!()
-    }*/
+    }
+
+    /// Apply anonymous access to bucket
+    pub async fn bucket_anonymous_apply(&self, b: &BucketSpecs) -> Res<()> {
+        let (new_user, mut identity) = match self.user_info("anonymous").await {
+            Ok(i) => (false, i),
+            Err(SeaweedfsClientError::UserDoesNotExist) if !b.anonymous_read_access => {
+                return Ok(());
+            }
+            Err(SeaweedfsClientError::UserDoesNotExist) => (
+                true,
+                Identity {
+                    name: "anonymous".to_string(),
+                    credentials: vec![],
+                    actions: vec![],
+                    account: None,
+                    disabled: false,
+                    service_account_ids: vec![],
+                    policy_names: vec![],
+                    is_static: false,
+                },
+            ),
+            Err(e) => return Err(e),
+        };
+
+        // Update user permissions
+        let perm_suffix = format!(":{}", b.name);
+        identity
+            .actions
+            .retain(|p| !p.ends_with(perm_suffix.as_str()));
+
+        if b.anonymous_read_access {
+            identity.actions.push(format!("Read{perm_suffix}"))
+        }
+
+        // Update identity
+        match new_user {
+            false => {
+                self.iam_client()
+                    .await?
+                    .update_user(UpdateUserRequest {
+                        username: "anonymous".to_string(),
+                        identity: Some(identity),
+                    })
+                    .await?;
+            }
+            true => {
+                self.iam_client()
+                    .await?
+                    .create_user(CreateUserRequest {
+                        identity: Some(identity),
+                    })
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply bucket desired configuration. If bucket already exists, it is not dropped
+    pub async fn bucket_apply(
+        &self,
+        b: &BucketSpecs,
+        user: UserInfo,
+    ) -> Result<(), SeaweedfsClientError> {
+        let mut filer_client = self.filer_client().await?;
+        let filer_config = filer_client
+            .get_filer_configuration(tonic::Request::new(GetFilerConfigurationRequest {}))
+            .await?
+            .into_inner();
+
+        let mut extended = HashMap::from([(
+            "s3-identity-id".to_string(),
+            user.username.to_string().encode_to_vec(),
+        )]);
+
+        if b.lock || b.versioning {
+            extended.insert(
+                "Seaweed-X-Amz-Versioning".to_string(),
+                "Enabled".as_bytes().to_vec(),
+            );
+        }
+
+        if b.lock {
+            extended.insert(
+                "Seaweed-X-Amz-Object-Lock-Enabled".to_string(),
+                "Enabled".as_bytes().to_vec(),
+            );
+        }
+
+        let entry = Entry {
+            name: b.name.to_string(),
+            is_directory: true,
+            chunks: vec![],
+            attributes: Some(FuseAttributes {
+                file_size: 0,
+                mtime: 0,
+                file_mode: 0777,
+                uid: 0,
+                gid: 0,
+                crtime: 0,
+                mime: "".to_string(),
+                ttl_sec: 0,
+                user_name: "".to_string(),
+                group_name: vec![],
+                symlink_target: "".to_string(),
+                md5: vec![],
+                rdev: 0,
+                inode: 0,
+                ctime: 0,
+                mtime_ns: 0,
+                ctime_ns: 0,
+                crtime_ns: 0,
+            }),
+            extended,
+            hard_link_id: vec![],
+            hard_link_counter: 0,
+            content: vec![],
+            remote_entry: None,
+            quota: b.quota.unwrap_or(0),
+            worm_enforced_at_ts_ns: 0,
+        };
+
+        // Create or update bucket
+        match self.bucket_get_single(&b.name).await {
+            Ok(_) => {
+                filer_client
+                    .update_entry(UpdateEntryRequest {
+                        directory: filer_config.dir_buckets,
+                        entry: Some(entry),
+                        is_from_other_cluster: false,
+                        signatures: vec![],
+                        expected_extended: Default::default(),
+                    })
+                    .await?;
+            }
+            Err(SeaweedfsClientError::BucketDoesNotExist) => {
+                filer_client
+                    .create_entry(CreateEntryRequest {
+                        directory: filer_config.dir_buckets,
+                        entry: Some(entry),
+                        o_excl: false,
+                        is_from_other_cluster: false,
+                        signatures: vec![],
+                        skip_check_parent_directory: false,
+                    })
+                    .await?;
+            }
+            Err(e) => return Err(e),
+        }
+
+        self.bucket_anonymous_apply(b).await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use rand::distr::{Alphanumeric, SampleString};
-    use crate::seaweedfs_client::UserInfo;
+    use crate::seaweedfs_client::{SeaweedfsClientError, UserInfo};
     use crate::seaweedfs_test_server::SeaweedfsTestServer;
+    use rand::distr::{Alphanumeric, SampleString};
 
     const TEST_BUCKET_NAME: &str = "mybucket";
     const TEST_POLICY_NAME: &str = "mypolicy";
@@ -209,6 +400,11 @@ mod test {
         let inst = srv.as_instance();
         let users = inst.users_list().await.unwrap();
         assert!(users.is_empty());
+
+        assert!(matches!(
+            inst.user_info(&user).await,
+            Err(SeaweedfsClientError::UserDoesNotExist)
+        ));
 
         // Create user
         let initial_info = UserInfo {

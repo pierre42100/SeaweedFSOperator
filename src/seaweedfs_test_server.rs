@@ -69,7 +69,7 @@ impl SeaweedfsTestServer {
 
     /// Get a Seaweedfs instance of this temporary server
     pub fn as_instance(&self) -> SeaweedfsInstance {
-        SeaweedfsInstance::new("test", self.grpc_url())
+        SeaweedfsInstance::new(self.grpc_url())
     }
 }
 
