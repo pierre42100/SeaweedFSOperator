@@ -1,13 +1,18 @@
 use crate::protos::seaweed_filer_client::SeaweedFilerClient;
 use crate::protos::seaweed_identity_access_management_client::SeaweedIdentityAccessManagementClient;
-use crate::protos::{CreateUserRequest, GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity, ListUsersRequest};
+use crate::protos::{
+    CreateUserRequest, Credential, GetConfigurationRequest, GetFilerConfigurationRequest,
+    GetUserRequest, Identity, ListUsersRequest, UpdateUserRequest,
+};
 use std::fmt::Display;
 use tonic::codegen::http::uri::InvalidUri;
 use tonic::transport::Channel;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UserInfo {
-    // TODO
+    username: String,
+    access_key: String,
+    secret_key: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -19,7 +24,7 @@ pub enum SeaweedfsClientError {
     #[error("failed to query gRPC endpoint: {0}")]
     CallError(#[from] tonic::Status),
     #[error("requested user does not exists")]
-    UserDoesNotExist
+    UserDoesNotExist,
 }
 
 type Res<E> = Result<E, SeaweedfsClientError>;
@@ -91,17 +96,17 @@ impl SeaweedfsInstance {
         Ok(users.into_inner().usernames)
     }
 
-    /// Get a user information
-    pub async fn user_info(&self) -> Res<Identity> {
+    /// Get a single user information
+    pub async fn user_info<U: Display>(&self, username: U) -> Res<Identity> {
         let res = self
             .iam_client()
             .await?
             .get_user(tonic::Request::new(GetUserRequest {
-                username: self.name.clone(),
+                username: username.to_string(),
             }))
             .await?;
-        
-        let Some(identity)=res.into_inner().identity else {
+
+        let Some(identity) = res.into_inner().identity else {
             return Err(SeaweedfsClientError::UserDoesNotExist);
         };
 
@@ -109,8 +114,44 @@ impl SeaweedfsInstance {
     }
 
     /// Create or update user information
-    pub async fn users_apply(&self, info: UserInfo) -> Result<(), SeaweedfsClientError> {
-        todo!()
+    pub async fn user_apply(&self, info: UserInfo) -> Result<(), SeaweedfsClientError> {
+        let identity = Identity {
+            name: info.username,
+            credentials: vec![Credential {
+                access_key: info.access_key,
+                secret_key: info.secret_key,
+                status: "Active".to_string(),
+            }],
+            actions: vec![],
+            account: None,
+            disabled: false,
+            service_account_ids: vec![],
+            policy_names: vec![],
+            is_static: false,
+        };
+
+        // Create or update user information
+        match self.users_list().await?.contains(&identity.name) {
+            true => {
+                self.iam_client()
+                    .await?
+                    .update_user(UpdateUserRequest {
+                        username: identity.name.to_string(),
+                        identity: Some(identity),
+                    })
+                    .await?;
+            }
+            false => {
+                self.iam_client()
+                    .await?
+                    .create_user(CreateUserRequest {
+                        identity: Some(identity),
+                    })
+                    .await?;
+            }
+        }
+
+        Ok(())
     }
 
     /*/// Get the list of buckets
@@ -126,6 +167,8 @@ impl SeaweedfsInstance {
 
 #[cfg(test)]
 mod test {
+    use rand::distr::{Alphanumeric, SampleString};
+    use crate::seaweedfs_client::UserInfo;
     use crate::seaweedfs_test_server::SeaweedfsTestServer;
 
     const TEST_BUCKET_NAME: &str = "mybucket";
@@ -137,5 +180,59 @@ mod test {
         let srv = SeaweedfsTestServer::start().await.unwrap();
         let users = srv.as_instance().users_list().await.unwrap();
         assert!(users.is_empty());
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn create_update_user() {
+        let user = "myuser";
+
+        let srv = SeaweedfsTestServer::start().await.unwrap();
+        let inst = srv.as_instance();
+        let users = inst.users_list().await.unwrap();
+        assert!(users.is_empty());
+
+        // Create user
+        let initial_info = UserInfo {
+            username: user.to_string(),
+            access_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+            secret_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+        };
+        inst.user_apply(initial_info.clone()).await.unwrap();
+
+        let users = inst.users_list().await.unwrap();
+        assert_eq!(users, &[user.to_string()]);
+        let id = inst.user_info(user).await.unwrap();
+        assert_eq!(id.name, user);
+        assert_eq!(id.credentials.len(), 1);
+        assert_eq!(id.credentials[0].access_key, initial_info.access_key);
+        assert_eq!(id.credentials[0].secret_key, initial_info.secret_key);
+
+        // Update user
+        let new_info = UserInfo {
+            username: user.to_string(),
+            access_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+            secret_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+        };
+        inst.user_apply(new_info.clone()).await.unwrap();
+
+        let users = inst.users_list().await.unwrap();
+        assert_eq!(users, &[user.to_string()]);
+        let id = inst.user_info(user).await.unwrap();
+        assert_eq!(id.name, user);
+        assert_eq!(id.credentials.len(), 1);
+        assert_eq!(id.credentials[0].access_key, new_info.access_key);
+        assert_eq!(id.credentials[0].secret_key, new_info.secret_key);
+
+        // Create second user
+        let second_user = UserInfo {
+            username: "zsecond".to_string(),
+            access_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+            secret_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+        };
+        inst.user_apply(second_user.clone()).await.unwrap();
+
+        let users = inst.users_list().await.unwrap();
+        assert_eq!(users, &[user.to_string(), second_user.username]);
     }
 }
