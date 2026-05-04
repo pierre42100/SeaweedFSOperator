@@ -4,6 +4,7 @@
 
 use crate::seaweedfs_client::SeaweedfsInstance;
 use rand::RngExt;
+use std::ops::Range;
 use std::process::{Child, Command};
 use std::time::Duration;
 
@@ -22,13 +23,17 @@ pub struct SeaweedfsTestServer {
     storage_base_dir: temp_dir::TempDir,
     child: Child,
     filer_grpc_port: u16,
+    s3_port: u16,
 }
 
 impl SeaweedfsTestServer {
     pub async fn start() -> Result<Self, SeaweedfsTestServerError> {
         let storage_dir = temp_dir::TempDir::new().map_err(SeaweedfsTestServerError::TempDir)?;
 
-        let filer_grpc_port = rand::rng().random::<u16>().min(2000);
+        let filer_grpc_port = rand::rng().random_range::<u16, Range<u16>>(2000..40000);
+        let s3_port = rand::rng().random_range::<u16, Range<u16>>(2000..40000);
+
+        assert_ne!(filer_grpc_port, s3_port);
 
         let weed_binary = std::env::var("WEED_BINARY").unwrap_or("weed".to_string());
         tracing::debug!("weed_binary: {weed_binary}");
@@ -37,6 +42,7 @@ impl SeaweedfsTestServer {
             .arg("mini")
             .arg(format!("-dir={}", storage_dir.path().to_string_lossy()))
             .arg(format!("-filer.port.grpc={filer_grpc_port}"))
+            .arg(format!("-s3.port={s3_port}"))
             .arg("-admin.ui=false")
             .arg("-webdav=false")
             .spawn()
@@ -46,6 +52,7 @@ impl SeaweedfsTestServer {
             storage_base_dir: storage_dir,
             child,
             filer_grpc_port,
+            s3_port,
         };
 
         // Wait for Seaweedfs to become ready
@@ -63,13 +70,18 @@ impl SeaweedfsTestServer {
     }
 
     /// Get filer gRPC url of this test server
-    pub fn grpc_url(&self) -> String {
+    pub fn filer_grpc_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.filer_grpc_port)
+    }
+
+    /// Get s3 url of this test server
+    pub fn s3_url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.s3_port)
     }
 
     /// Get a Seaweedfs instance of this temporary server
     pub fn as_instance(&self) -> SeaweedfsInstance {
-        SeaweedfsInstance::new(self.grpc_url())
+        SeaweedfsInstance::new(self.filer_grpc_url())
     }
 }
 

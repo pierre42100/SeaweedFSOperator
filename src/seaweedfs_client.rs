@@ -531,12 +531,17 @@ mod test {
 
         assert_eq!(single_bucket.unwrap().quota, 0);
 
+        let bucket_url = format!("{}/{}/random", srv.s3_url(), bucket_1.name);
+        assert_eq!(reqwest::get(&bucket_url).await.unwrap().status(), 403);
+
         // Update bucket information
         bucket_1.anonymous_read_access = true;
         bucket_1.quota = Some(10000);
         instance.bucket_apply(&bucket_1, &user_1).await.unwrap();
         let single_bucket = instance.bucket_get_single(&bucket_1.name).await.unwrap();
         assert_eq!(single_bucket.quota, 10000);
+
+        assert_eq!(reqwest::get(&bucket_url).await.unwrap().status(), 404);
 
         let user_2 = UserInfo {
             username: "user2".to_string(),

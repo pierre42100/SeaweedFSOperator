@@ -10,10 +10,13 @@ tonic-prost = "0.14.5"
 tokio = { version = "1.52.1", features = ["full"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
-temp-dir = "0.2.0"
-rand = "0.10.1"
-test-log = { version = "0.2.20", features = ["trace"] }
 serde = { version = "1.0.228", features = ["derive"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.5"
+
+[dev-dependencies]
+temp-dir = "0.2.0"
+rand = "0.10.1"
+test-log = { version = "0.2.20", features = ["trace"] }
+reqwest = "0.13.3"
