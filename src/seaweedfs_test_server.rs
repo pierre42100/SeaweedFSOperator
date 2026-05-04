@@ -3,7 +3,7 @@
 //! Used for testing only
 
 use crate::seaweedfs_client::SeaweedfsInstance;
-use rand::{ RngExt};
+use rand::RngExt;
 use std::process::{Child, Command};
 use std::time::Duration;
 

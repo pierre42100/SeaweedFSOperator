@@ -1,13 +1,21 @@
 use crate::protos::seaweed_filer_client::SeaweedFilerClient;
 use crate::protos::seaweed_identity_access_management_client::SeaweedIdentityAccessManagementClient;
-use crate::protos::{CreateEntryRequest, CreateUserRequest, Credential, Entry, FuseAttributes, GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity, ListEntriesRequest, ListUsersRequest, UpdateEntryRequest, UpdateUserRequest};
+use crate::protos::{
+    CreateEntryRequest, CreateUserRequest, Credential, Entry, FuseAttributes,
+    GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity,
+    ListEntriesRequest, ListUsersRequest, LookupDirectoryEntryRequest,
+    LookupDirectoryEntryResponse, UpdateEntryRequest, UpdateUserRequest,
+};
 use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Display;
-use tonic::Code;
 use tonic::codegen::http::uri::InvalidUri;
 use tonic::codegen::tokio_stream::StreamExt;
 use tonic::transport::Channel;
+use tonic::{Code, Response, Status};
+
+/// https://pkg.go.dev/io/fs#ModeDir
+const OS_MODE_DIR: u32 = 2147483648;
 
 #[derive(Debug, Clone)]
 pub struct UserInfo {
@@ -205,10 +213,13 @@ impl SeaweedfsInstance {
         let mut list = Vec::new();
         while let Some(item) = stream.next().await {
             let item = item?;
-            if let Some(entry) = item.entry
+            if let Some(entry) = item.entry.clone()
                 && entry.is_directory
             {
+                tracing::debug!("Found bucket entry: {:?}", entry);
                 list.push(entry);
+            } else {
+                tracing::debug!("Skipping bucket entry: {item:?}");
             }
         }
 
@@ -217,7 +228,30 @@ impl SeaweedfsInstance {
 
     /// Get a single bucket information
     pub async fn bucket_get_single(&self, name: &str) -> Res<Entry> {
-        todo!()
+        let mut filer_client = self.filer_client().await?;
+        let filer_config = filer_client
+            .get_filer_configuration(GetFilerConfigurationRequest {})
+            .await?
+            .into_inner();
+
+        let response = filer_client
+            .lookup_directory_entry(LookupDirectoryEntryRequest {
+                directory: filer_config.dir_buckets,
+                name: name.to_string(),
+            })
+            .await
+            .map_err(|e| match (e.code(), e.message()) {
+                (Code::NotFound, _) => SeaweedfsClientError::BucketDoesNotExist,
+                (Code::Unknown, s) if s.contains("no entry is found in filer store") => {
+                    SeaweedfsClientError::BucketDoesNotExist
+                }
+                _ => SeaweedfsClientError::CallError(e),
+            })?;
+
+        response
+            .into_inner()
+            .entry
+            .ok_or(SeaweedfsClientError::BucketDoesNotExist)
     }
 
     /// Apply anonymous access to bucket
@@ -280,7 +314,7 @@ impl SeaweedfsInstance {
     pub async fn bucket_apply(
         &self,
         b: &BucketSpecs,
-        user: UserInfo,
+        user: &UserInfo,
     ) -> Result<(), SeaweedfsClientError> {
         let mut filer_client = self.filer_client().await?;
         let filer_config = filer_client
@@ -314,7 +348,7 @@ impl SeaweedfsInstance {
             attributes: Some(FuseAttributes {
                 file_size: 0,
                 mtime: 0,
-                file_mode: 0777,
+                file_mode: 0777 | OS_MODE_DIR,
                 uid: 0,
                 gid: 0,
                 crtime: 0,
@@ -343,6 +377,7 @@ impl SeaweedfsInstance {
         // Create or update bucket
         match self.bucket_get_single(&b.name).await {
             Ok(_) => {
+                tracing::info!("Update bucket {} information", b.name);
                 filer_client
                     .update_entry(UpdateEntryRequest {
                         directory: filer_config.dir_buckets,
@@ -354,6 +389,7 @@ impl SeaweedfsInstance {
                     .await?;
             }
             Err(SeaweedfsClientError::BucketDoesNotExist) => {
+                tracing::info!("Create bucket {}", b.name);
                 filer_client
                     .create_entry(CreateEntryRequest {
                         directory: filer_config.dir_buckets,
@@ -376,7 +412,7 @@ impl SeaweedfsInstance {
 
 #[cfg(test)]
 mod test {
-    use crate::seaweedfs_client::{SeaweedfsClientError, UserInfo};
+    use crate::seaweedfs_client::{BucketSpecs, SeaweedfsClientError, UserInfo};
     use crate::seaweedfs_test_server::SeaweedfsTestServer;
     use rand::distr::{Alphanumeric, SampleString};
 
@@ -456,5 +492,82 @@ mod test {
         let srv = SeaweedfsTestServer::start().await.unwrap();
         let buckets = srv.as_instance().buckets_list().await.unwrap();
         assert!(buckets.is_empty());
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn create_buckets() {
+        let srv = SeaweedfsTestServer::start().await.unwrap();
+        let instance = srv.as_instance();
+
+        assert_eq!(instance.buckets_list().await.unwrap(), vec![]);
+
+        let user_1 = UserInfo {
+            username: "user1".to_string(),
+            access_key: "u1accskey".to_string(),
+            secret_key: "u1seckey".to_string(),
+        };
+
+        let mut bucket_1 = BucketSpecs {
+            instance: "test".to_string(),
+            secret: "test".to_string(),
+            name: "firstbucket".to_string(),
+            anonymous_read_access: false,
+            versioning: false,
+            quota: None,
+            lock: false,
+        };
+
+        instance.user_apply(user_1.clone()).await.unwrap();
+        instance.bucket_apply(&bucket_1, &user_1).await.unwrap();
+
+        assert_ne!(instance.buckets_list().await.unwrap(), vec![]);
+
+        let single_bucket = instance.bucket_get_single(&bucket_1.name).await;
+        assert!(
+            single_bucket.is_ok(),
+            "failed to get bucket info with Err {single_bucket:?}"
+        );
+
+        assert_eq!(single_bucket.unwrap().quota, 0);
+
+        // Update bucket information
+        bucket_1.anonymous_read_access = true;
+        bucket_1.quota = Some(10000);
+        instance.bucket_apply(&bucket_1, &user_1).await.unwrap();
+        let single_bucket = instance.bucket_get_single(&bucket_1.name).await.unwrap();
+        assert_eq!(single_bucket.quota, 10000);
+
+        let user_2 = UserInfo {
+            username: "user2".to_string(),
+            access_key: "u2accskey".to_string(),
+            secret_key: "u2seckey".to_string(),
+        };
+
+        let bucket_2 = BucketSpecs {
+            instance: "test".to_string(),
+            secret: "test".to_string(),
+            name: "secondbucket".to_string(),
+            anonymous_read_access: false,
+            versioning: false,
+            quota: None,
+            lock: false,
+        };
+
+        let bucket_3 = BucketSpecs {
+            instance: "test".to_string(),
+            secret: "test".to_string(),
+            name: "thirdbucket".to_string(),
+            anonymous_read_access: false,
+            versioning: false,
+            quota: None,
+            lock: false,
+        };
+
+        instance.user_apply(user_2.clone()).await.unwrap();
+        instance.bucket_apply(&bucket_2, &user_2).await.unwrap();
+        instance.bucket_apply(&bucket_3, &user_2).await.unwrap();
+
+        assert_eq!(instance.buckets_list().await.unwrap().len(), 3);
     }
 }
