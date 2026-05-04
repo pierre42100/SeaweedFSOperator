@@ -3,16 +3,16 @@ use crate::protos::seaweed_identity_access_management_client::SeaweedIdentityAcc
 use crate::protos::{
     CreateEntryRequest, CreateUserRequest, Credential, Entry, FuseAttributes,
     GetConfigurationRequest, GetFilerConfigurationRequest, GetUserRequest, Identity,
-    ListEntriesRequest, ListUsersRequest, LookupDirectoryEntryRequest,
-    LookupDirectoryEntryResponse, UpdateEntryRequest, UpdateUserRequest,
+    ListEntriesRequest, ListUsersRequest, LookupDirectoryEntryRequest, UpdateEntryRequest,
+    UpdateUserRequest,
 };
 use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Display;
+use tonic::Code;
 use tonic::codegen::http::uri::InvalidUri;
 use tonic::codegen::tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use tonic::{Code, Response, Status};
 
 /// https://pkg.go.dev/io/fs#ModeDir
 const OS_MODE_DIR: u32 = 2147483648;
@@ -75,10 +75,10 @@ impl SeaweedfsInstance {
 
     /// Connect to gRPC endpoint
     async fn connect(&self) -> Res<tonic::transport::Channel> {
-        Ok(Channel::from_shared(self.url.as_bytes().to_vec())?
+        Channel::from_shared(self.url.as_bytes().to_vec())?
             .connect()
             .await
-            .map_err(SeaweedfsClientError::ConnectError)?)
+            .map_err(SeaweedfsClientError::ConnectError)
     }
 
     /// Get IAM client
@@ -142,9 +142,7 @@ impl SeaweedfsInstance {
 
                 Ok(identity)
             }
-            Err(e) if e.code() == Code::NotFound => {
-                return Err(SeaweedfsClientError::UserDoesNotExist);
-            }
+            Err(e) if e.code() == Code::NotFound => Err(SeaweedfsClientError::UserDoesNotExist),
             Err(e) => Err(SeaweedfsClientError::CallError(e)),
         }
     }
@@ -348,7 +346,7 @@ impl SeaweedfsInstance {
             attributes: Some(FuseAttributes {
                 file_size: 0,
                 mtime: 0,
-                file_mode: 0777 | OS_MODE_DIR,
+                file_mode: 0o0777 | OS_MODE_DIR,
                 uid: 0,
                 gid: 0,
                 crtime: 0,
@@ -415,9 +413,6 @@ mod test {
     use crate::seaweedfs_client::{BucketSpecs, SeaweedfsClientError, UserInfo};
     use crate::seaweedfs_test_server::SeaweedfsTestServer;
     use rand::distr::{Alphanumeric, SampleString};
-
-    const TEST_BUCKET_NAME: &str = "mybucket";
-    const TEST_POLICY_NAME: &str = "mypolicy";
 
     #[tokio::test]
     #[test_log::test]
