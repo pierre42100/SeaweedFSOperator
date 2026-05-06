@@ -17,6 +17,15 @@ use tonic::transport::Channel;
 /// https://pkg.go.dev/io/fs#ModeDir
 const OS_MODE_DIR: u32 = 2147483648;
 
+/// Seaweed versioning attribute key
+const EXT_ATTR_KEY_SEAWEED_VERSIONING: &str = "Seaweed-X-Amz-Versioning";
+/// Seaweed locking attribute key
+const EXT_ATTR_KEY_SEAWEED_LOCK: &str = "Seaweed-X-Amz-Object-Lock-Enabled";
+/// When an attribute is enabled
+const EXT_ATTR_KEY_ENABLED: &str = "Enabled";
+/// Name of the anonymous user used to provide public access to buckets
+const ANONYMOUS_USER: &str = "anonymous";
+
 #[derive(Debug, Clone)]
 pub struct UserInfo {
     username: String,
@@ -24,10 +33,8 @@ pub struct UserInfo {
     secret_key: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct BucketSpecs {
-    pub instance: String,
-    pub secret: String,
     /// The name of the bucket
     pub name: String,
     /// Render bucket publicly available
@@ -74,7 +81,7 @@ impl SeaweedfsInstance {
     }
 
     /// Connect to gRPC endpoint
-    async fn connect(&self) -> Res<tonic::transport::Channel> {
+    async fn connect(&self) -> Res<Channel> {
         Channel::from_shared(self.url.as_bytes().to_vec())?
             .connect()
             .await
@@ -224,8 +231,8 @@ impl SeaweedfsInstance {
         Ok(list)
     }
 
-    /// Get a single bucket information
-    pub async fn bucket_get_single(&self, name: &str) -> Res<Entry> {
+    /// Get a single bucket entry
+    async fn bucket_get_single(&self, name: &str) -> Res<Entry> {
         let mut filer_client = self.filer_client().await?;
         let filer_config = filer_client
             .get_filer_configuration(GetFilerConfigurationRequest {})
@@ -252,9 +259,44 @@ impl SeaweedfsInstance {
             .ok_or(SeaweedfsClientError::BucketDoesNotExist)
     }
 
+    /// Get a single bucket information
+    pub async fn bucket_info(&self, name: &str) -> Res<BucketSpecs> {
+        let entry = self.bucket_get_single(name).await?;
+
+        Ok(BucketSpecs {
+            name: name.to_string(),
+            anonymous_read_access: self.bucket_anonymous_get(name).await?,
+            versioning: entry
+                .extended
+                .get(EXT_ATTR_KEY_SEAWEED_VERSIONING)
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                == EXT_ATTR_KEY_ENABLED.as_bytes(),
+            quota: match entry.quota > 0 {
+                true => Some(entry.quota),
+                false => None,
+            },
+            lock: entry
+                .extended
+                .get(EXT_ATTR_KEY_SEAWEED_LOCK)
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                == EXT_ATTR_KEY_ENABLED.as_bytes(),
+        })
+    }
+
+    /// Get anonymous access status to bucket
+    pub async fn bucket_anonymous_get(&self, bucket: &str) -> Res<bool> {
+        match self.user_info(ANONYMOUS_USER).await {
+            Ok(u) => Ok(u.actions.contains(&format!("Read:{bucket}"))),
+            Err(SeaweedfsClientError::UserDoesNotExist) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Apply anonymous access to bucket
     pub async fn bucket_anonymous_apply(&self, b: &BucketSpecs) -> Res<()> {
-        let (new_user, mut identity) = match self.user_info("anonymous").await {
+        let (new_user, mut identity) = match self.user_info(ANONYMOUS_USER).await {
             Ok(i) => (false, i),
             Err(SeaweedfsClientError::UserDoesNotExist) if !b.anonymous_read_access => {
                 return Ok(());
@@ -291,7 +333,7 @@ impl SeaweedfsInstance {
                 self.iam_client()
                     .await?
                     .update_user(UpdateUserRequest {
-                        username: "anonymous".to_string(),
+                        username: ANONYMOUS_USER.to_string(),
                         identity: Some(identity),
                     })
                     .await?;
@@ -327,15 +369,15 @@ impl SeaweedfsInstance {
 
         if b.lock || b.versioning {
             extended.insert(
-                "Seaweed-X-Amz-Versioning".to_string(),
-                "Enabled".as_bytes().to_vec(),
+                EXT_ATTR_KEY_SEAWEED_VERSIONING.to_string(),
+                EXT_ATTR_KEY_ENABLED.as_bytes().to_vec(),
             );
         }
 
         if b.lock {
             extended.insert(
-                "Seaweed-X-Amz-Object-Lock-Enabled".to_string(),
-                "Enabled".as_bytes().to_vec(),
+                EXT_ATTR_KEY_SEAWEED_LOCK.to_string(),
+                EXT_ATTR_KEY_ENABLED.as_bytes().to_vec(),
             );
         }
 
@@ -504,8 +546,6 @@ mod test {
         };
 
         let mut bucket_1 = BucketSpecs {
-            instance: "test".to_string(),
-            secret: "test".to_string(),
             name: "firstbucket".to_string(),
             anonymous_read_access: false,
             versioning: false,
@@ -518,13 +558,10 @@ mod test {
 
         assert_ne!(instance.buckets_list().await.unwrap(), vec![]);
 
-        let single_bucket = instance.bucket_get_single(&bucket_1.name).await;
-        assert!(
-            single_bucket.is_ok(),
-            "failed to get bucket info with Err {single_bucket:?}"
+        assert_eq!(
+            instance.bucket_info(&bucket_1.name).await.unwrap(),
+            bucket_1
         );
-
-        assert_eq!(single_bucket.unwrap().quota, 0);
 
         let bucket_url = format!("{}/{}/random", srv.s3_url(), bucket_1.name);
         assert_eq!(reqwest::get(&bucket_url).await.unwrap().status(), 403);
@@ -533,8 +570,10 @@ mod test {
         bucket_1.anonymous_read_access = true;
         bucket_1.quota = Some(10000);
         instance.bucket_apply(&bucket_1, &user_1).await.unwrap();
-        let single_bucket = instance.bucket_get_single(&bucket_1.name).await.unwrap();
-        assert_eq!(single_bucket.quota, 10000);
+        assert_eq!(
+            instance.bucket_info(&bucket_1.name).await.unwrap(),
+            bucket_1
+        );
 
         assert_eq!(reqwest::get(&bucket_url).await.unwrap().status(), 404);
 
@@ -545,8 +584,6 @@ mod test {
         };
 
         let bucket_2 = BucketSpecs {
-            instance: "test".to_string(),
-            secret: "test".to_string(),
             name: "secondbucket".to_string(),
             anonymous_read_access: false,
             versioning: false,
@@ -555,8 +592,6 @@ mod test {
         };
 
         let bucket_3 = BucketSpecs {
-            instance: "test".to_string(),
-            secret: "test".to_string(),
             name: "thirdbucket".to_string(),
             anonymous_read_access: false,
             versioning: false,
@@ -567,6 +602,14 @@ mod test {
         instance.user_apply(user_2.clone()).await.unwrap();
         instance.bucket_apply(&bucket_2, &user_2).await.unwrap();
         instance.bucket_apply(&bucket_3, &user_2).await.unwrap();
+        assert_eq!(
+            instance.bucket_info(&bucket_2.name).await.unwrap(),
+            bucket_2
+        );
+        assert_eq!(
+            instance.bucket_info(&bucket_3.name).await.unwrap(),
+            bucket_3
+        );
 
         assert_eq!(instance.buckets_list().await.unwrap().len(), 3);
     }
