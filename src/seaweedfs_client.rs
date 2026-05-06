@@ -575,7 +575,28 @@ mod test {
             bucket_1
         );
 
+        // Update bucket information, again
+        bucket_1.versioning = true;
+        bucket_1.lock = true;
+        bucket_1.quota = None;
+        instance.bucket_apply(&bucket_1, &user_1).await.unwrap();
+        assert_eq!(
+            instance.bucket_info(&bucket_1.name).await.unwrap(),
+            bucket_1
+        );
+
         assert_eq!(reqwest::get(&bucket_url).await.unwrap().status(), 404);
+
+        // Update bucket information, for the last time
+        bucket_1.versioning = false;
+        bucket_1.lock = false;
+        bucket_1.quota = None;
+        bucket_1.anonymous_read_access = false;
+        instance.bucket_apply(&bucket_1, &user_1).await.unwrap();
+        assert_eq!(
+            instance.bucket_info(&bucket_1.name).await.unwrap(),
+            bucket_1
+        );
 
         let user_2 = UserInfo {
             username: "user2".to_string(),
