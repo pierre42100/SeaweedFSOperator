@@ -1,1 +1,110 @@
-TODO
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  # name must match the spec fields below, and be in the form: <plural>.<group>
+  name: seaweedfsinstances.communiquons.org
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: communiquons.org
+  # list of versions supported by this CustomResourceDefinition
+  versions:
+    - name: v1
+      # Each version can be enabled/disabled by Served flag.
+      served: true
+      # One and only one version must be marked as the storage version.
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: Information about how to reach the SeaweedFS instance
+              properties:
+                filergrpc:
+                  description: The URL where the Filer GRCP API can be reached
+                  example: http://seaweedfs:8889
+                  type: string
+  # either Namespaced or Cluster
+  scope: Cluster
+  names:
+    # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+    plural: seaweedfsinstances
+    # singular name to be used as an alias on the CLI and for display
+    singular: seaweedfsinstance
+    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    kind: SeaweedFSInstance
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+      - seainst
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  # name must match the spec fields below, and be in the form: <plural>.<group>
+  name: seaweedfsbuckets.communiquons.org
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: communiquons.org
+  # list of versions supported by this CustomResourceDefinition
+  versions:
+    - name: v1
+      # Each version can be enabled/disabled by Served flag.
+      served: true
+      # One and only one version must be marked as the storage version.
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: Information about the desired bucket
+              required:
+                - instance
+                - name
+                - secret
+              properties:
+                instance:
+                  description: The name of the SeaweedFSInstance resource
+                  example: seaweedfs
+                  type: string
+                name:
+                  description: The name of the bucket to create / update
+                  type: string
+                  example: mybucket
+                secret:
+                  description: The name of the secret that will receive an access key & a secret key with write access on the bucket
+                  type: string
+                  example: secret-name
+                anonymous_read_access:
+                  description: Allow anonymous users to access the because, in read only mode. Set to true to host a website
+                  type: boolean
+                  default: false
+                versioning:
+                  description: Set to keep multiple versions of the same object under the same key
+                  type: boolean
+                  default: false
+                quota:
+                  type: integer
+                  description: Limits the amount of data in the bucket, in bytes. By default it is unlimited
+                  example: 1000000000
+                lock:
+                  description: Object locking prevent objects from being deleted. Cannot be changed.
+                  type: boolean
+                  default: false
+  # either Namespaced or Cluster
+  scope: Namespaced
+  names:
+    # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+    plural: seaweedfsbuckets
+    # singular name to be used as an alias on the CLI and for display
+    singular: seaweedfsbucket
+    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    kind: SeaweedFSBucket
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+      - swfsb
+      - swfsbuckets
+      - seabuckets
+---

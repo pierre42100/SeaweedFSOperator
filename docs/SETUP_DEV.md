@@ -44,7 +44,6 @@ NAME       STATUS   ROLES           AGE     VERSION
 minikube   Ready    control-plane   2m16s   v1.32.0
 ```
 
-
 ## Clone repository
 Clone this repository using:
 
@@ -55,6 +54,13 @@ cd seaweedfs-k8s-operator
 
 > \[!NOTE]
 > If you want to get a Gitea account to make a pull request on this repository, you will need to contact me at: `pierre.git@communiquons.org`
+
+## Apply CRD definitions
+Apply this project Custom Ressources Definitions in order to be able to create bucket instances later:
+
+```bash
+minikube kubectl -- apply -f manifests/crd.yaml
+```
 
 ## Expose services locally
 Run the following command to expose SeaweedFS services locally:
