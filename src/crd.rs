@@ -3,11 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(CustomResource, Debug, Serialize, Deserialize, Default, Clone, JsonSchema)]
-#[kube(
-    group = "communiquons.org",
-    version = "v1",
-    kind = "SeaweedFSInstance"
-)]
+#[kube(group = "communiquons.org", version = "v1", kind = "SeaweedFSInstance")]
 pub struct SeaweedFSInstanceSpec {
     pub filergrpc: String,
 }
