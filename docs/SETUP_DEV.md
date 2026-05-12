@@ -28,7 +28,7 @@ You will then need to start Minikube using the following command:
 sudo -g docker bash
 
 # Start Minikube
- minikube start -d docker
+minikube start -d docker
 ```
 
 You can then make sure that Minikube is working properly:
@@ -66,7 +66,7 @@ minikube kubectl -- apply -f manifests/crd.yaml
 Run the following command to expose SeaweedFS services locally:
 
 ```bash
-minikube tunnel --bind-address '127.0.0.1' 
+minikube tunnel --bind-address '127.0.0.1'
 ```
 
 ## Deploy Seaweedfs
@@ -124,3 +124,5 @@ You can then run the project using the following command:
 ```bash
 cargo fmt && cargo clippy && RUST_LOG=debug cargo run --
 ```
+
+You will find some tests definitions inside the [tests](tests) directory.

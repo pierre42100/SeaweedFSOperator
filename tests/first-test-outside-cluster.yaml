@@ -1,0 +1,21 @@
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSInstance
+metadata:
+  name: my-swfs-instance
+spec:
+  filergrpc: http://localhost:8889
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: firsttest-first
+---
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSBucket
+metadata:
+  name: first-bucket
+  namespace: firsttest-first
+spec:
+  instance: my-swfs-instance
+  name: firsttest-first
+  secret: first-bucket-first
