@@ -45,6 +45,11 @@ impl SeaweedfsTestServer {
             .arg(format!("-s3.port={s3_port}"))
             .arg("-admin.ui=false")
             .arg("-webdav=false")
+            .arg("-disableHttp")
+            .arg("-filer.allowedOrigins='127.0.0.1'")
+            .arg("-filer.disableDirListing")
+            .arg("-filer.ui.deleteDir=false")
+            .arg("-master.telemetry=false")
             .spawn()
             .map_err(SeaweedfsTestServerError::SpawnProcess)?;
 
