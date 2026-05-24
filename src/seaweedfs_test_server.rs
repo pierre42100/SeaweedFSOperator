@@ -1,4 +1,4 @@
-//! # Minio server controller
+//! # Seaweedfs server controller
 //!
 //! Used for testing only
 

@@ -1,7 +1,13 @@
 use crate::crd;
-use crate::seaweedfs_client::SeaweedfsInstance;
+use crate::k8s_secrets::{SecretError, read_or_create_secret};
+use crate::seaweedfs_client::{SeaweedfsInstance, UserInfo};
 use kube::{Api, Client};
+use std::collections::BTreeMap;
 use std::time::Duration;
+
+pub const SECRET_SEAWEEDFS_BUCKET_USERNAME: &str = "username";
+pub const SECRET_SEAWEEDFS_BUCKET_ACCESS_KEY: &str = "accessKey";
+pub const SECRET_SEAWEEDFS_BUCKET_SECRET_KEY: &str = "secretKey";
 
 #[derive(Debug, thiserror::Error)]
 pub enum K8sOperationError {
@@ -11,6 +17,8 @@ pub enum K8sOperationError {
     GetSeaweedFSInstanceHasNoName,
     #[error("seaweedfs instance is not ready!")]
     SeaweedFSInstanceNotReady,
+    #[error("secret error: {0}")]
+    ApplySecret(#[source] SecretError),
 }
 
 type Res<R> = Result<R, K8sOperationError>;
@@ -40,6 +48,38 @@ pub async fn apply_bucket(bucket: &crd::SeaweedFSBucket, client: &Client) -> Res
     // Check if Seaweedfs is responding; try multiple time before giving up
     let instance = SeaweedfsInstance::new(&instance.spec.filergrpc);
     wait_seaweedfs_ready(&instance, &seaweedfs_instance_name).await?;
+
+    // Get or create user information
+    let user_info = read_or_create_secret(
+        &client,
+        &bucket.spec.secret,
+        bucket.metadata.namespace.as_deref().unwrap_or(client.default_namespace()),
+        || {
+            let user = UserInfo::gen_random(&bucket.spec.name);
+            BTreeMap::from([
+                (SECRET_SEAWEEDFS_BUCKET_USERNAME.to_string(), user.username),
+                (
+                    SECRET_SEAWEEDFS_BUCKET_ACCESS_KEY.to_string(),
+                    user.access_key,
+                ),
+                (
+                    SECRET_SEAWEEDFS_BUCKET_SECRET_KEY.to_string(),
+                    user.secret_key,
+                ),
+            ])
+        },
+        |reader| {
+            Ok(UserInfo {
+                username: reader.read(SECRET_SEAWEEDFS_BUCKET_USERNAME)?,
+                access_key: reader.read(SECRET_SEAWEEDFS_BUCKET_ACCESS_KEY)?,
+                secret_key: reader.read(SECRET_SEAWEEDFS_BUCKET_SECRET_KEY)?,
+            })
+        },
+    )
+    .await
+    .map_err(K8sOperationError::ApplySecret)?;
+
+    println!("user info: {user_info:?}");
 
     // TODO : continue here
 
