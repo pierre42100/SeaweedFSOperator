@@ -1,4 +1,4 @@
-# Setup SeaweedFS for operator development
+# Setup SeaweedFS operator for development
 
 ## Install Rust
 As this project has been written using Rust, you will need to install it prior working on it. Please follow the official instructions: [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
@@ -125,4 +125,4 @@ You can then run the project using the following command:
 cargo fmt && cargo clippy && RUST_LOG=debug cargo run --
 ```
 
-You will find some tests definitions inside the [tests](tests) directory.
+You will find some tests definitions inside the [tests](../tests) directory.

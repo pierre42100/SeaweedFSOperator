@@ -8,6 +8,8 @@ use seaweedfs_k8s_operator::k8s_operations;
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    tracing::info!("starting operator");
+
     let client = kube::Client::try_default()
         .await
         .expect("Kubernetes client could not be initialized");
