@@ -27,6 +27,9 @@ spec:
             - containerPort: 9333
               protocol: TCP
               name: master-ui
+            - containerPort: 19333
+              protocol: TCP
+              name: master-grpc
             - containerPort: 9340
               protocol: TCP
               name: volume-server
@@ -58,6 +61,7 @@ spec:
             - -filer.allowedOrigins='127.0.0.1'
             - -filer.disableDirListing
             - -master.telemetry=false
+            - -master.port.grpc=19333
           volumeMounts:
             - mountPath: "/data"
               name: data
@@ -102,6 +106,9 @@ spec:
     - name: master-ui
       port: 9333
       targetPort: master-ui
+    - name: master-grpc
+      port: 19333
+      targetPort: master-grpc
     - name: volume-server
       port: 9340
       targetPort: volume-server

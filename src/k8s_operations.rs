@@ -53,7 +53,7 @@ pub async fn apply_bucket(bucket: &crd::SeaweedFSBucket, client: &Client) -> Res
 
     // Get or create user information
     let user_info = read_or_create_secret(
-        &client,
+        client,
         &bucket.spec.secret,
         bucket
             .metadata

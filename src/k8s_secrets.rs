@@ -25,7 +25,7 @@ pub struct SecretReader<'a>(&'a Secret);
 
 impl SecretReader<'_> {
     pub fn read(&self, k: &str) -> Res<String> {
-        read_secret_str(&self.0, k)
+        read_secret_str(self.0, k)
     }
 }
 
@@ -70,8 +70,8 @@ fn read_secret_str(s: &Secret, key: &str) -> Res<String> {
         key.to_string(),
     ))?;
 
-    Ok(String::from_utf8(value.0.clone())
-        .map_err(|e| SecretError::DecodeSecretValueAsString(key.to_string(), e))?)
+    String::from_utf8(value.0.clone())
+        .map_err(|e| SecretError::DecodeSecretValueAsString(key.to_string(), e))
 }
 
 /// Create a secret consisting only of string key / value pairs
@@ -80,7 +80,7 @@ async fn create_secret(
     name: &str,
     values: BTreeMap<String, String>,
 ) -> Res<Secret> {
-    Ok(secrets
+    secrets
         .create(
             &PostParams::default(),
             &Secret {
@@ -111,5 +111,5 @@ async fn create_secret(
             },
         )
         .await
-        .map_err(SecretError::CreateSecret)?)
+        .map_err(SecretError::CreateSecret)
 }
