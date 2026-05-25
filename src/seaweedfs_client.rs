@@ -188,6 +188,7 @@ impl SeaweedfsInstance {
             service_account_ids: vec![],
             policy_names: vec![],
             is_static: false,
+            tags: vec![],
         };
 
         // Create or update user information
@@ -331,6 +332,7 @@ impl SeaweedfsInstance {
                     service_account_ids: vec![],
                     policy_names: vec![],
                     is_static: false,
+                    tags: vec![],
                 },
             ),
             Err(e) => return Err(e),
@@ -423,6 +425,8 @@ impl SeaweedfsInstance {
                 mtime_ns: 0,
                 ctime_ns: 0,
                 crtime_ns: 0,
+                atime: 0,
+                atime_ns: 0,
             }),
             extended,
             hard_link_id: vec![],
@@ -457,6 +461,7 @@ impl SeaweedfsInstance {
                         is_from_other_cluster: false,
                         signatures: vec![],
                         skip_check_parent_directory: false,
+                        condition: None,
                     })
                     .await?;
             }
