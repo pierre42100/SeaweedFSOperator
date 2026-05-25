@@ -20,6 +20,7 @@ steps:
     depends_on:
       - fetch_dependencies
     commands:
+      - apt update && apt install -y protobuf-compiler libprotobuf-dev
       - rustup component add clippy
       - cargo clippy -- -D warnings
 
@@ -32,8 +33,7 @@ steps:
       - name: rust_registry
         path: /usr/local/cargo/registry
     commands:
-      - apt update && apt upgrade -y
-      - apt install -y protobuf-compiler libprotobuf-dev
+      - apt update && apt install -y protobuf-compiler libprotobuf-dev
       - wget -O linux_amd64.tar.gz https://github.com/seaweedfs/seaweedfs/releases/download/latest/linux_amd64.tar.gz
       - tar -xf linux_amd64.tar.gz
       - mv weed /usr/bin
@@ -55,8 +55,7 @@ steps:
       - name: releases
         path: /tmp/releases
     commands:
-      - apt update
-      - apt install -y protobuf-compiler libprotobuf-dev
+      - apt update && apt install -y protobuf-compiler libprotobuf-dev
       - cargo build --release
       - ls -lah target/release/seaweedfs-k8s-operator
       - cp target/release/seaweedfs-k8s-operator /tmp/releases
