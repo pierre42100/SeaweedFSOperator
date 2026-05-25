@@ -13,7 +13,7 @@ sudo apt install -y protobuf-compiler libprotobuf-dev
 
 ## Download `weed` and add it to your path
 ```bash
-wget https://github.com/seaweedfs/seaweedfs/releases/download/4.22/linux_amd64.tar.gz
+wget https://github.com/seaweedfs/seaweedfs/releases/download/latest/linux_amd64.tar.gz
 tar -xf linux_amd64.tar.gz
 ```
 

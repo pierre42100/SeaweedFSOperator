@@ -1,0 +1,89 @@
+---
+kind: pipeline
+type: docker
+name: default
+
+steps:
+  - name: fetch_dependencies
+    image: rust
+    volumes:
+      - name: rust_registry
+        path: /usr/local/cargo/registry
+    commands:
+      - cargo fetch
+
+  - name: code_quality
+    image: rust
+    volumes:
+      - name: rust_registry
+        path: /usr/local/cargo/registry
+    depends_on:
+      - fetch_dependencies
+    commands:
+      - rustup component add clippy
+      - cargo clippy -- -D warnings
+
+  # Run testsuite
+  - name: test
+    image: rust
+    depends_on:
+      - code_quality
+    volumes:
+      - name: rust_registry
+        path: /usr/local/cargo/registry
+    commands:
+      - apt update && apt upgrade -y
+      - apt install -y protobuf-compiler libprotobuf-dev
+      - wget -O linux_amd64.tar.gz https://github.com/seaweedfs/seaweedfs/releases/download/latest/linux_amd64.tar.gz
+      - tar -xf linux_amd64.tar.gz
+      - mv weed /usr/bin
+      - chmod +x /usr/bin/weed
+      - cargo test -- --test-threads 1
+
+  # Build release
+  - name: compile
+    image: rust
+    depends_on:
+      - code_quality
+      - test
+    when:
+      event:
+        - tag
+    volumes:
+      - name: rust_registry
+        path: /usr/local/cargo/registry
+      - name: releases
+        path: /tmp/releases
+    commands:
+      - apt update
+      - apt install -y protobuf-compiler libprotobuf-dev
+      - cargo build --release
+      - ls -lah target/release/seaweedfs-k8s-operator
+      - cp target/release/seaweedfs-k8s-operator /tmp/releases
+
+
+  # Auto-release to Gitea
+  - name: gitea_release
+    image: plugins/gitea-release@sha256:d7b01c25a91f1e34a51e0a34e6af2d701df2b3534e2bb7dfa810185da5cd31e4
+    depends_on:
+      - compile
+    when:
+      event:
+        - tag
+    volumes:
+      - name: releases
+        path: /tmp/releases
+    environment:
+      PLUGIN_API_KEY:
+        from_secret: GITEA_API_KEY # needs permission write:repository
+    settings:
+      base_url: https://gitea.communiquons.org
+      files:
+        - /tmp/releases/seaweedfs-k8s-operator
+      checksum: sha512
+
+volumes:
+  - name: rust_registry
+    temp: { }
+  - name: releases
+    temp: {}
