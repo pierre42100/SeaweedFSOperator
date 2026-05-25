@@ -1,0 +1,51 @@
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSInstance
+metadata:
+  name: mul-inst
+spec:
+  filergrpc: http://localhost:8889
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mul-inst
+---
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSBucket
+metadata:
+  name: mul-buck-1
+  namespace: mul-inst
+spec:
+  instance: mul-inst
+  name: mul-buck-1
+  secret: mul-buck
+---
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSBucket
+metadata:
+  name: mul-buck-2
+  namespace: mul-inst
+spec:
+  instance: mul-inst
+  name: mul-buck-2
+  secret: mul-buck
+---
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSBucket
+metadata:
+  name: mul-buck-3
+  namespace: mul-inst
+spec:
+  instance: mul-inst
+  name: mul-buck-3
+  secret: mul-buck
+---
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSBucket
+metadata:
+  name: mul-buck-4
+  namespace: mul-inst
+spec:
+  instance: mul-inst
+  name: mul-buck-4
+  secret: mul-buck
