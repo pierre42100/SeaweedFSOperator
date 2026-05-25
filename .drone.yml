@@ -34,7 +34,7 @@ steps:
         path: /usr/local/cargo/registry
     commands:
       - apt update && apt install -y protobuf-compiler libprotobuf-dev
-      - wget -O linux_amd64.tar.gz https://github.com/seaweedfs/seaweedfs/releases/download/latest/linux_amd64.tar.gz
+      - wget -O linux_amd64.tar.gz https://github.com/seaweedfs/seaweedfs/releases/latest/download/linux_amd64.tar.gz
       - tar -xf linux_amd64.tar.gz
       - mv weed /usr/bin
       - chmod +x /usr/bin/weed
