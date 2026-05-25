@@ -6,7 +6,6 @@ use crate::protos::{
     ListEntriesRequest, ListUsersRequest, LookupDirectoryEntryRequest, UpdateEntryRequest,
     UpdateUserRequest,
 };
-use prost::Message;
 use rand::distr::{Alphanumeric, SampleString};
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -384,7 +383,7 @@ impl SeaweedfsInstance {
 
         let mut extended = HashMap::from([(
             "s3-identity-id".to_string(),
-            user.username.to_string().encode_to_vec(),
+            user.username.as_bytes().to_vec(),
         )]);
 
         if b.lock || b.versioning {
