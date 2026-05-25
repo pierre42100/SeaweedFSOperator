@@ -2,7 +2,7 @@ use crate::crd;
 use crate::k8s_secrets::{SecretError, read_or_create_secret};
 use crate::seaweedfs_client::{SeaweedfsClientError, SeaweedfsInstance, UserInfo};
 use kube::{Api, Client};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
 pub const SECRET_SEAWEEDFS_BUCKET_USERNAME: &str = "username";
@@ -52,7 +52,7 @@ pub async fn apply_bucket(bucket: &crd::SeaweedFSBucket, client: &Client) -> Res
     wait_seaweedfs_ready(&instance, &seaweedfs_instance_name).await?;
 
     // Get or create user information
-    let user_info = read_or_create_secret(
+    let mut user_info = read_or_create_secret(
         client,
         &bucket.spec.secret,
         bucket
@@ -79,11 +79,22 @@ pub async fn apply_bucket(bucket: &crd::SeaweedFSBucket, client: &Client) -> Res
                 username: reader.read(SECRET_SEAWEEDFS_BUCKET_USERNAME)?,
                 access_key: reader.read(SECRET_SEAWEEDFS_BUCKET_ACCESS_KEY)?,
                 secret_key: reader.read(SECRET_SEAWEEDFS_BUCKET_SECRET_KEY)?,
+                buckets: HashSet::from([bucket.spec.name.clone()]),
             })
         },
     )
     .await
     .map_err(K8sOperationError::ApplySecret)?;
+
+    tracing::debug!(
+        "attempt to retrieve information about user {}",
+        user_info.username
+    );
+    if let Ok(id) = instance.user_info(user_info.username.as_str()).await {
+        for b in id.buckets_with_rights() {
+            user_info.buckets.insert(b.to_string());
+        }
+    }
 
     tracing::debug!("apply user {}", user_info.username);
     instance

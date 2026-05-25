@@ -7,7 +7,7 @@ use crate::protos::{
     UpdateUserRequest,
 };
 use rand::distr::{Alphanumeric, SampleString};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use tonic::Code;
 use tonic::codegen::http::uri::InvalidUri;
@@ -37,6 +37,8 @@ pub struct UserInfo {
     pub username: String,
     pub access_key: String,
     pub secret_key: String,
+    /// List of buckets the user has access to
+    pub buckets: HashSet<String>,
 }
 
 impl UserInfo {
@@ -48,6 +50,7 @@ impl UserInfo {
                 Alphanumeric.sample_string(&mut rand::rng(), S3_ACCESS_KEY_LEN)
             ),
             secret_key: Alphanumeric.sample_string(&mut rand::rng(), S3_SECRET_KEY_LEN),
+            buckets: Default::default(),
         }
     }
 }
@@ -67,6 +70,16 @@ pub struct BucketSpecs {
     /// Bucket lock
     #[serde(default)]
     pub lock: bool,
+}
+
+impl Identity {
+    /// Get the buckets over which user has rights
+    pub fn buckets_with_rights(&self) -> HashSet<&str> {
+        self.actions
+            .iter()
+            .flat_map(|a| a.strip_prefix("read:"))
+            .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -175,6 +188,13 @@ impl SeaweedfsInstance {
 
     /// Create or update user information
     pub async fn user_apply(&self, info: UserInfo) -> Result<(), SeaweedfsClientError> {
+        let mut actions = HashSet::new();
+        for bucket in &info.buckets {
+            actions.insert(format!("read:{bucket}"));
+            actions.insert(format!("write:{bucket}"));
+            actions.insert(format!("list:{bucket}"));
+        }
+
         let identity = Identity {
             name: info.username,
             credentials: vec![Credential {
@@ -182,7 +202,7 @@ impl SeaweedfsInstance {
                 secret_key: info.secret_key,
                 status: "Active".to_string(),
             }],
-            actions: vec![],
+            actions: actions.into_iter().collect(),
             account: None,
             disabled: false,
             service_account_ids: vec![],
@@ -375,8 +395,16 @@ impl SeaweedfsInstance {
     pub async fn bucket_apply(
         &self,
         b: &BucketSpecs,
-        user: &UserInfo,
+        owner: &UserInfo,
     ) -> Result<(), SeaweedfsClientError> {
+        if !owner.buckets.contains(&b.name) {
+            tracing::warn!(
+                "The owner of the bucket {} ({}) will not have any right on it!",
+                b.name,
+                owner.username
+            );
+        }
+
         let mut filer_client = self.filer_client().await?;
         let filer_config = filer_client
             .get_filer_configuration(tonic::Request::new(GetFilerConfigurationRequest {}))
@@ -385,7 +413,7 @@ impl SeaweedfsInstance {
 
         let mut extended = HashMap::from([(
             "s3-identity-id".to_string(),
-            user.username.as_bytes().to_vec(),
+            owner.username.as_bytes().to_vec(),
         )]);
 
         if b.lock || b.versioning {
@@ -479,6 +507,7 @@ mod test {
     use crate::seaweedfs_client::{BucketSpecs, SeaweedfsClientError, UserInfo};
     use crate::seaweedfs_test_server::SeaweedfsTestServer;
     use rand::distr::{Alphanumeric, SampleString};
+    use std::collections::HashSet;
 
     #[tokio::test]
     #[test_log::test]
@@ -508,6 +537,7 @@ mod test {
             username: user.to_string(),
             access_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
             secret_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+            buckets: HashSet::from(["first".to_string(), "second".to_string()]),
         };
         inst.user_apply(initial_info.clone()).await.unwrap();
 
@@ -518,12 +548,14 @@ mod test {
         assert_eq!(id.credentials.len(), 1);
         assert_eq!(id.credentials[0].access_key, initial_info.access_key);
         assert_eq!(id.credentials[0].secret_key, initial_info.secret_key);
+        assert_eq!(id.buckets_with_rights(), HashSet::from(["first", "second"]));
 
         // Update user
         let new_info = UserInfo {
             username: user.to_string(),
             access_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
             secret_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+            buckets: HashSet::from(["third".to_string(), "fourth".to_string()]),
         };
         inst.user_apply(new_info.clone()).await.unwrap();
 
@@ -534,12 +566,14 @@ mod test {
         assert_eq!(id.credentials.len(), 1);
         assert_eq!(id.credentials[0].access_key, new_info.access_key);
         assert_eq!(id.credentials[0].secret_key, new_info.secret_key);
+        assert_eq!(id.buckets_with_rights(), HashSet::from(["third", "fourth"]));
 
         // Create second user
         let second_user = UserInfo {
             username: "zsecond".to_string(),
             access_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
             secret_key: Alphanumeric.sample_string(&mut rand::rng(), 16),
+            buckets: HashSet::new(),
         };
         inst.user_apply(second_user.clone()).await.unwrap();
 
@@ -567,6 +601,7 @@ mod test {
             username: "user1".to_string(),
             access_key: "u1accskey".to_string(),
             secret_key: "u1seckey".to_string(),
+            buckets: HashSet::new(),
         };
 
         let mut bucket_1 = BucketSpecs {
@@ -626,6 +661,7 @@ mod test {
             username: "user2".to_string(),
             access_key: "u2accskey".to_string(),
             secret_key: "u2seckey".to_string(),
+            buckets: HashSet::new(),
         };
 
         let bucket_2 = BucketSpecs {
