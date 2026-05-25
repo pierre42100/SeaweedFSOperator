@@ -77,7 +77,7 @@ impl Identity {
     pub fn buckets_with_rights(&self) -> HashSet<&str> {
         self.actions
             .iter()
-            .flat_map(|a| a.strip_prefix("read:"))
+            .flat_map(|a| a.strip_prefix("Read:"))
             .collect()
     }
 }
@@ -190,9 +190,9 @@ impl SeaweedfsInstance {
     pub async fn user_apply(&self, info: UserInfo) -> Result<(), SeaweedfsClientError> {
         let mut actions = HashSet::new();
         for bucket in &info.buckets {
-            actions.insert(format!("read:{bucket}"));
-            actions.insert(format!("write:{bucket}"));
-            actions.insert(format!("list:{bucket}"));
+            actions.insert(format!("Read:{bucket}"));
+            actions.insert(format!("Write:{bucket}"));
+            actions.insert(format!("List:{bucket}"));
         }
 
         let identity = Identity {
