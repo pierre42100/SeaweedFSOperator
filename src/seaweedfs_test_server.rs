@@ -105,7 +105,7 @@ mod test {
 
     #[tokio::test]
     #[test_log::test]
-    async fn start_minio() {
+    async fn start_seaweedfs() {
         let server = SeaweedfsTestServer::start().await.unwrap();
         let instance = server.as_instance();
         println!("{instance:#?}");

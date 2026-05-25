@@ -1,6 +1,6 @@
 use crate::crd;
 use crate::k8s_secrets::{SecretError, read_or_create_secret};
-use crate::seaweedfs_client::{SeaweedfsInstance, UserInfo};
+use crate::seaweedfs_client::{SeaweedfsClientError, SeaweedfsInstance, UserInfo};
 use kube::{Api, Client};
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -17,8 +17,10 @@ pub enum K8sOperationError {
     GetSeaweedFSInstanceHasNoName,
     #[error("seaweedfs instance is not ready!")]
     SeaweedFSInstanceNotReady,
-    #[error("secret error: {0}")]
+    #[error("apply secret error: {0}")]
     ApplySecret(#[source] SecretError),
+    #[error("apply user error: {0}")]
+    ApplyUser(#[source] SeaweedfsClientError),
 }
 
 type Res<R> = Result<R, K8sOperationError>;
@@ -53,7 +55,11 @@ pub async fn apply_bucket(bucket: &crd::SeaweedFSBucket, client: &Client) -> Res
     let user_info = read_or_create_secret(
         &client,
         &bucket.spec.secret,
-        bucket.metadata.namespace.as_deref().unwrap_or(client.default_namespace()),
+        bucket
+            .metadata
+            .namespace
+            .as_deref()
+            .unwrap_or(client.default_namespace()),
         || {
             let user = UserInfo::gen_random(&bucket.spec.name);
             BTreeMap::from([
@@ -79,9 +85,23 @@ pub async fn apply_bucket(bucket: &crd::SeaweedFSBucket, client: &Client) -> Res
     .await
     .map_err(K8sOperationError::ApplySecret)?;
 
-    println!("user info: {user_info:?}");
+    tracing::debug!("apply user {}", user_info.username);
+    instance
+        .user_apply(user_info.clone())
+        .await
+        .map_err(K8sOperationError::ApplyUser)?;
 
-    // TODO : continue here
+    let bucket = bucket.into();
+    tracing::debug!(
+        "apply bucket configuration {bucket:?} for user {}",
+        user_info.username
+    );
+    instance
+        .bucket_apply(&bucket, &user_info)
+        .await
+        .map_err(K8sOperationError::ApplyUser)?;
+
+    tracing::info!("bucket configuration applied.");
 
     Ok(())
 }

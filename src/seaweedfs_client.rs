@@ -7,9 +7,9 @@ use crate::protos::{
     UpdateUserRequest,
 };
 use prost::Message;
+use rand::distr::{Alphanumeric, SampleString};
 use std::collections::HashMap;
 use std::fmt::Display;
-use rand::distr::{Alphanumeric, SampleString};
 use tonic::Code;
 use tonic::codegen::http::uri::InvalidUri;
 use tonic::codegen::tokio_stream::StreamExt;
@@ -44,7 +44,10 @@ impl UserInfo {
     pub fn gen_random(prefix: &str) -> Self {
         Self {
             username: format!("{prefix}_usr"),
-            access_key: format!("{prefix}_akey_{}", Alphanumeric.sample_string(&mut rand::rng(), S3_ACCESS_KEY_LEN)),
+            access_key: format!(
+                "{prefix}_akey_{}",
+                Alphanumeric.sample_string(&mut rand::rng(), S3_ACCESS_KEY_LEN)
+            ),
             secret_key: Alphanumeric.sample_string(&mut rand::rng(), S3_SECRET_KEY_LEN),
         }
     }
