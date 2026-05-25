@@ -1,0 +1,22 @@
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSInstance
+metadata:
+  name: anon-inst
+spec:
+  filergrpc: http://localhost:8889
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anonns
+---
+apiVersion: "communiquons.org/v1"
+kind: SeaweedFSBucket
+metadata:
+  name: first-bucket
+  namespace: anonns
+spec:
+  instance: anon-inst
+  name: pubbucket
+  secret: first-bucket-first
+  anonymous_read_access: true

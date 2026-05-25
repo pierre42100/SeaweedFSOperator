@@ -54,6 +54,10 @@ spec:
             - -filer.ui.deleteDir=false
             - -filer.port.grpc=8889
             - -webdav=false
+            - -disableHttp
+            - -filer.allowedOrigins='127.0.0.1'
+            - -filer.disableDirListing
+            - -master.telemetry=false
           volumeMounts:
             - mountPath: "/data"
               name: data
