@@ -27,4 +27,4 @@ tonic-prost-build = "0.14.6"
 temp-dir = "0.2.0"
 rand = "0.10.1"
 test-log = { version = "0.2.20", features = ["trace"] }
-reqwest = "0.13.3"
+reqwest = "0.13.4"
