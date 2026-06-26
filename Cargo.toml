@@ -13,7 +13,7 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 serde = { version = "1.0.228", features = ["derive"] }
 schemars = "1.2.1"
-kube = { version = "3.1.0", features = ["runtime", "derive"] }
+kube = { version = "4.0.0", features = ["runtime", "derive"] }
 k8s-openapi = { version = "0.28.0", features = ["v1_35"] }
 serde_json = "1.0.150"
 tracing-subscriber = "0.3.23"
