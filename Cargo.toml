@@ -9,7 +9,7 @@ tonic = "0.14.6"
 prost = "0.14.4"
 tonic-prost = "0.14.6"
 tokio = { version = "1.53.0", features = ["full"] }
-thiserror = "2.0.18"
+thiserror = "2.0.19"
 tracing = "0.1.44"
 serde = { version = "1.0.229", features = ["derive"] }
 schemars = "1.2.1"
