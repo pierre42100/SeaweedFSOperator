@@ -251,6 +251,7 @@ impl SeaweedfsInstance {
                 inclusive_start_from: false,
                 limit: u32::MAX,
                 snapshot_ts_ns: 0,
+                omit_chunks: true,
             }))
             .await?
             .into_inner();
@@ -476,6 +477,7 @@ impl SeaweedfsInstance {
                         is_from_other_cluster: false,
                         signatures: vec![],
                         expected_extended: Default::default(),
+                        condition: None,
                     })
                     .await?;
             }
@@ -490,6 +492,7 @@ impl SeaweedfsInstance {
                         signatures: vec![],
                         skip_check_parent_directory: false,
                         condition: None,
+                        is_moved: false,
                     })
                     .await?;
             }
