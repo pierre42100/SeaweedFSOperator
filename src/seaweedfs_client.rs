@@ -261,6 +261,7 @@ impl SeaweedfsInstance {
             let item = item?;
             if let Some(entry) = item.entry.clone()
                 && entry.is_directory
+                && !entry.name.starts_with(".")
             {
                 tracing::debug!("Found bucket entry: {:?}", entry);
                 list.push(entry);
