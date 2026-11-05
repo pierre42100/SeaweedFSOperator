@@ -21,7 +21,7 @@ futures = "0.3.34"
 rand = "0.10.3"
 
 [build-dependencies]
-tonic-prost-build = "0.14.6"
+tonic-prost-build = "0.14.8"
 
 [dev-dependencies]
 temp-dir = "0.2.0"
